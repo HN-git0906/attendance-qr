@@ -1,8 +1,10 @@
 <!DOCTYPE html>
+
 <html lang="ja">
+
 <head>
+
   <meta charset="UTF-8">
-  <base target="_top">
 
   <meta
     name="viewport"
@@ -10,115 +12,149 @@
   >
 
   <title>出欠QR</title>
+
 </head>
+
 
 <body>
 
-  <!-- QRカメラ -->
-  <div id="reader" style="width:340px;"></div>
 
-  <!-- iOSで音を有効にする -->
+  <!-- QRカメラ -->
+
+  <div
+    id="reader"
+    style="width:340px;"
+  ></div>
+
+
+  <!-- iOSで音を有効化 -->
+
   <button id="sound">
     Sound ON (iOS)
   </button>
 
-  <!-- 読取・保存結果 -->
+
+  <!-- 結果表示 -->
+
   <div id="result"></div>
 
-  <!-- Menuシートから取得 -->
+
+  <!-- Menuシート -->
+
   <select
     id="menu"
     onchange="CURRENT_TEXT = '';"
   >
-    <option>メニュー読込中...</option>
+
+    <option>
+      メニュー読込中...
+    </option>
+
   </select>
 
 
   <!-- QRライブラリ -->
-  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+  <script
+    src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"
+  ></script>
 
 
-  <script>
-
-    /*
-     * =========================================
-     * Apps Script WebアプリURL
-     * =========================================
-     *
-     * デプロイ後の /exec URL に変更する
-     *
-     * 例:
-     * https://script.google.com/macros/s/XXXXXXXX/exec
-     */
-
-    const API_URL =
-      'https://script.google.com/a/macros/hi-tech.ac.jp/s/AKfycbwg76NLu-Myta4t2NlQTBGtMNq7dq2J5I7ZmK2b_3XGQs0Ckps-xkIQuhKMLTmcHO3F/exec';
+<script>
 
 
-    /*
-     * =========================================
-     * 基本設定
-     * =========================================
-     */
+/*
+ * ==================================================
+ * Apps Script WebアプリURL
+ * ==================================================
+ *
+ * /exec まで含めて指定する
+ */
 
-    let CURRENT_TEXT = '';
-
-    const PENDING = new Map();
-
-
-    /*
-     * PIN
-     *
-     * GitHub上には保存しない。
-     * Safariを閉じるまではsessionStorageに保持する。
-     */
-
-    let API_PIN =
-      sessionStorage.getItem('attendancePin') || '';
-
-    if (!API_PIN) {
-
-      API_PIN =
-        prompt('出欠管理PINを入力してください') || '';
-
-      if (API_PIN) {
-        sessionStorage.setItem(
-          'attendancePin',
-          API_PIN
-        );
-      }
-    }
+const API_URL =
+  'ここにApps Scriptの/exec URL';
 
 
-    /*
-     * =========================================
-     * 画面にメッセージを追加
-     * =========================================
-     */
 
-    const append = (text) => {
+/*
+ * ==================================================
+ * 基本設定
+ * ==================================================
+ */
 
-      document
-        .querySelector('#result')
-        .innerHTML += `${text}<br>`;
-    };
+let CURRENT_TEXT = '';
 
 
-    /*
-     * =========================================
-     * Apps ScriptへPOST
-     * =========================================
-     *
-     * GitHub Pagesからgoogle.script.runは
-     * 使用できないため、hidden formを使う。
-     */
 
-    function sendRequest(
-      action,
-      data = {}
-    ) {
+/*
+ * ==================================================
+ * PIN
+ * ==================================================
+ *
+ * GitHubにはPINを書かない。
+ * ページを開いた際に入力する。
+ */
 
-      const requestId =
+let API_PIN =
+  sessionStorage
+    .getItem(
+      'attendancePin'
+    ) || '';
+
+
+if (!API_PIN) {
+
+  API_PIN =
+    prompt(
+      '出欠管理PINを入力してください'
+    ) || '';
+
+  if (API_PIN) {
+
+    sessionStorage
+      .setItem(
+        'attendancePin',
+        API_PIN
+      );
+  }
+}
+
+
+
+/*
+ * ==================================================
+ * 画面表示
+ * ==================================================
+ */
+
+const append = (text) => {
+
+  document
+    .querySelector(
+      '#result'
+    )
+    .innerHTML +=
+      `${text}<br>`;
+};
+
+
+
+/*
+ * ==================================================
+ * JSONP通信
+ * ==================================================
+ *
+ * Menu取得と保存確認に使用
+ */
+
+function jsonp(params) {
+
+  return new Promise(
+    (resolve, reject) => {
+
+
+      const callbackName =
+        'cb_' +
         Date.now() +
         '_' +
         Math.random()
@@ -126,479 +162,658 @@
           .slice(2);
 
 
+      params.callback =
+        callbackName;
+
+
+      const script =
+        document
+          .createElement(
+            'script'
+          );
+
+
+      const url =
+        API_URL +
+        '?' +
+        new URLSearchParams(
+          params
+        ).toString();
+
+
       /*
-       * 返信を受けるための
-       * 非表示iframe
+       * 10秒でタイムアウト
        */
 
-      const iframe =
-        document.createElement('iframe');
+      const timeout =
+        setTimeout(
+          () => {
 
-      iframe.name =
-        'post_' + requestId;
+            delete window[
+              callbackName
+            ];
 
-      iframe.style.display =
-        'none';
+            script.remove();
 
-      document.body
-        .appendChild(iframe);
-
-
-      /*
-       * POSTフォーム
-       */
-
-      const form =
-        document.createElement('form');
-
-      form.method =
-        'POST';
-
-      form.action =
-        API_URL;
-
-      form.target =
-        iframe.name;
-
-      form.style.display =
-        'none';
-
-
-      const values = {
-
-        action: action,
-
-        pin: API_PIN,
-
-        requestId: requestId,
-
-        ...data
-      };
-
-
-      Object
-        .entries(values)
-        .forEach(
-          ([key, value]) => {
-
-            const input =
-              document.createElement('input');
-
-            input.type =
-              'hidden';
-
-            input.name =
-              key;
-
-            input.value =
-              value;
-
-            form.appendChild(
-              input
+            reject(
+              new Error(
+                '通信タイムアウト'
+              )
             );
-          }
+
+          },
+          10000
         );
 
 
-      document.body
-        .appendChild(form);
+      /*
+       * Apps Scriptから
+       * JSONPが返ってきた場合
+       */
+
+      window[
+        callbackName
+      ] = function(data) {
+
+        clearTimeout(
+          timeout
+        );
+
+        delete window[
+          callbackName
+        ];
+
+        script.remove();
+
+        resolve(
+          data
+        );
+      };
 
 
       /*
-       * 応答待ちとして記録
+       * 通信自体が失敗
        */
 
-      PENDING.set(
-        requestId,
-        {
-          iframe: iframe,
-          form: form,
-          action: action,
-          text: data.text || ''
-        }
+      script.onerror =
+        function() {
+
+          clearTimeout(
+            timeout
+          );
+
+          delete window[
+            callbackName
+          ];
+
+          script.remove();
+
+          reject(
+            new Error(
+              '通信エラー'
+            )
+          );
+        };
+
+
+      script.src =
+        url;
+
+
+      document.body
+        .appendChild(
+          script
+        );
+    }
+  );
+}
+
+
+
+/*
+ * ==================================================
+ * Menuシート取得
+ * ==================================================
+ */
+
+async function loadMenus() {
+
+  const select =
+    document
+      .querySelector(
+        '#menu'
       );
 
 
-      /*
-       * Apps Scriptへ送信
-       */
+  try {
 
-      form.submit();
+    const data =
+      await jsonp({
+
+        action:
+          'menus',
+
+        pin:
+          API_PIN
+      });
 
 
-      /*
-       * 15秒でタイムアウト
-       */
+    if (!data.ok) {
 
-      setTimeout(
-        () => {
-
-          if (
-            PENDING.has(
-              requestId
-            )
-          ) {
-
-            const pending =
-              PENDING.get(
-                requestId
-              );
-
-            append(
-              '通信タイムアウト'
-            );
-
-            pending.form.remove();
-            pending.iframe.remove();
-
-            PENDING.delete(
-              requestId
-            );
-
-            /*
-             * 再読取可能にする
-             */
-
-            if (
-              pending.action ===
-              'scan'
-            ) {
-              CURRENT_TEXT = '';
-            }
-          }
-
-        },
-        15000
+      throw new Error(
+        data.error ||
+        'メニュー取得失敗'
       );
     }
 
 
-    /*
-     * =========================================
-     * Apps Scriptからの応答
-     * =========================================
-     */
-
-    window.addEventListener(
-      'message',
-      function(event) {
-
-        const data =
-          event.data;
+    select.innerHTML =
+      '';
 
 
-        /*
-         * 出欠QR APIからの
-         * メッセージだけ処理
-         */
+    data.menus
+      .forEach(
+        menu => {
 
-        if (
-          !data ||
-          data.source !==
-            'attendance-qr' ||
-          !data.requestId
-        ) {
-          return;
-        }
-
-
-        const pending =
-          PENDING.get(
-            data.requestId
-          );
-
-
-        if (!pending) {
-          return;
-        }
-
-
-        /*
-         * 使用済みフォーム等を削除
-         */
-
-        pending.form.remove();
-        pending.iframe.remove();
-
-        PENDING.delete(
-          data.requestId
-        );
-
-
-        /*
-         * エラー
-         */
-
-        if (!data.ok) {
-
-          append(
-            'エラー: ' +
-            data.error
-          );
-
-
-          /*
-           * QRの場合は
-           * もう一度読めるようにする
-           */
-
-          if (
-            pending.action ===
-            'scan'
-          ) {
-            CURRENT_TEXT = '';
-          }
-
-
-          /*
-           * PINが違う場合
-           */
-
-          if (
-            data.error ===
-            'PINが違います'
-          ) {
-
-            sessionStorage
-              .removeItem(
-                'attendancePin'
-              );
-
-            alert(
-              'PINが違います。\nページを再読み込みしてください。'
-            );
-          }
-
-          return;
-        }
-
-
-        /*
-         * -------------------------
-         * Menu取得成功
-         * -------------------------
-         */
-
-        if (
-          data.action ===
-          'menus'
-        ) {
-
-          const select =
+          const option =
             document
-              .querySelector(
-                '#menu'
+              .createElement(
+                'option'
               );
 
-          select.innerHTML =
-            '';
+          option.value =
+            menu;
 
+          option.textContent =
+            menu;
 
-          data.menus
-            .forEach(
-              menu => {
-
-                const option =
-                  document
-                    .createElement(
-                      'option'
-                    );
-
-                option.textContent =
-                  menu;
-
-                option.value =
-                  menu;
-
-                select.appendChild(
-                  option
-                );
-              }
+          select
+            .appendChild(
+              option
             );
-
-
-          append(
-            'メニューを読み込みました'
-          );
-
-          return;
         }
+      );
 
 
-        /*
-         * -------------------------
-         * QR保存成功
-         * -------------------------
-         */
+    select.dataset.ready =
+      '1';
 
-        if (
-          data.action ===
-          'scan'
-        ) {
 
-          append(
-            `保存完了: ${pending.text}`
-          );
-        }
+    append(
+      'メニューを読み込みました'
+    );
+
+
+  } catch (error) {
+
+    select.innerHTML =
+      '<option>メニュー取得失敗</option>';
+
+
+    append(
+      'メニュー取得失敗: ' +
+      error.message
+    );
+
+
+    if (
+      String(
+        error.message
+      ).includes(
+        'PIN'
+      )
+    ) {
+
+      sessionStorage
+        .removeItem(
+          'attendancePin'
+        );
+    }
+  }
+}
+
+
+
+/*
+ * ==================================================
+ * requestId作成
+ * ==================================================
+ */
+
+function makeRequestId() {
+
+  if (
+    window.crypto &&
+    crypto.randomUUID
+  ) {
+
+    return crypto
+      .randomUUID();
+  }
+
+
+  return (
+    Date.now()
+      .toString(36) +
+
+    '_' +
+
+    Math.random()
+      .toString(36)
+      .slice(2)
+  );
+}
+
+
+
+/*
+ * ==================================================
+ * QRをApps Scriptへ送信
+ * ==================================================
+ */
+
+async function sendScan(
+  decodedText,
+  menu
+) {
+
+
+  const requestId =
+    makeRequestId();
+
+
+  /*
+   * POST用データ
+   */
+
+  const body =
+    new URLSearchParams({
+
+      action:
+        'scan',
+
+      pin:
+        API_PIN,
+
+      requestId:
+        requestId,
+
+      text:
+        decodedText,
+
+      menu:
+        menu
+    });
+
+
+  /*
+   * Apps ScriptへPOST
+   *
+   * 応答内容自体は読まない。
+   * 実際に保存されたかは後でstatus確認する。
+   */
+
+  try {
+
+    await fetch(
+      API_URL,
+      {
+
+        method:
+          'POST',
+
+        mode:
+          'no-cors',
+
+        body:
+          body
       }
     );
 
 
+  } catch (error) {
+
+    append(
+      '送信失敗: ' +
+      decodedText
+    );
+
+    CURRENT_TEXT =
+      '';
+
+    return;
+  }
+
+
+  /*
+   * ==================================================
+   * 保存されたか確認
+   * ==================================================
+   *
+   * 最大約10秒確認する
+   */
+
+  for (
+    let i = 0;
+    i < 20;
+    i++
+  ) {
+
+
+    await new Promise(
+      resolve =>
+        setTimeout(
+          resolve,
+          500
+        )
+    );
+
+
+    try {
+
+      const status =
+        await jsonp({
+
+          action:
+            'status',
+
+          pin:
+            API_PIN,
+
+          requestId:
+            requestId
+        });
+
+
+      if (
+        status.ok
+      ) {
+
+        append(
+          '保存完了: ' +
+          decodedText
+        );
+
+        return;
+      }
+
+
+    } catch (error) {
+
+      /*
+       * 一時的な通信失敗は
+       * 次の確認へ
+       */
+    }
+  }
+
+
+  /*
+   * 最後まで確認できなかった
+   */
+
+  append(
+    '保存確認できません: ' +
+    decodedText
+  );
+
+
+  /*
+   * 同じQRを再度読めるようにする
+   */
+
+  CURRENT_TEXT =
+    '';
+}
+
+
+
+/*
+ * ==================================================
+ * QR読取成功
+ * ==================================================
+ */
+
+const onScanSuccess =
+  (
+    decodedText,
+    decodedResult
+  ) => {
+
+
+    console.log(
+      'onScanSuccess',
+      decodedText,
+      CURRENT_TEXT
+    );
+
+
     /*
-     * =========================================
-     * QR読取成功時
-     * =========================================
+     * 同じQRを連続で
+     * 何度も読むのを防止
      */
 
-    const onScanSuccess =
-      (
-        decodedText,
-        decodedResult
-      ) => {
+    if (
+      CURRENT_TEXT ===
+      decodedText
+    ) {
 
-        console.log(
-          'onScanSuccess',
-          decodedText,
-          CURRENT_TEXT
+      return;
+    }
+
+
+    /*
+     * Menu取得前なら保存しない
+     */
+
+    const menuSelect =
+      document
+        .querySelector(
+          '#menu'
         );
 
 
-        /*
-         * 同じQRの連続読取を防止
-         */
+    if (
+      menuSelect.dataset.ready !==
+      '1'
+    ) {
 
-        if (
-          CURRENT_TEXT !==
-          decodedText
-        ) {
+      append(
+        'メニューをまだ取得できていません'
+      );
 
-          CURRENT_TEXT =
-            decodedText;
-
-
-          /*
-           * 元コードと同様、
-           * 読み取った値を表示
-           */
-
-          append(
-            decodedText
-          );
+      return;
+    }
 
 
-          /*
-           * 音
-           */
-
-          beep();
-
-
-          /*
-           * 選択中のMenu
-           */
-
-          const menu =
-            document
-              .querySelector(
-                '#menu'
-              )
-              .value;
-
-
-          /*
-           * Apps Scriptへ送信
-           */
-
-          sendRequest(
-            'scan',
-            {
-              text:
-                decodedText,
-
-              menu:
-                menu
-            }
-          );
-        }
-      };
+    CURRENT_TEXT =
+      decodedText;
 
 
     /*
-     * =========================================
-     * QRスキャナー
-     * =========================================
-     *
-     * 元コードとほぼ同じ。
+     * 読取値を表示
      */
 
-    const html5QrcodeScanner =
-      new Html5QrcodeScanner(
-        'reader',
-        {
-          fps: 10,
-          qrbox: 240
-        }
-      );
-
-    html5QrcodeScanner.render(
-      onScanSuccess
+    append(
+      decodedText
     );
 
 
     /*
-     * =========================================
-     * ビープ音
-     * =========================================
-     *
-     * 元コードをそのまま利用。
+     * 音
      */
 
-    const DATA_URL =
-      "data:audio/wav;base64,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qJrx4KOQjahZxWbcZgztj2c49nKmkId44S71j0c8eV9yDK6uPRzx5X18eDvjvQ6yKo9ZSS6l//8elePK/Lf//IInrOF/FvDoADYAGBMGb7FtErm5MXMlmPAJQVgWta7Zx2go+8xJ0UiCb8LHHdftWyLJE0QIAIsI+UbXu67dZMjmgDGCGl1H+vpF4NSDckSIkk7Vd+sxEhBQMRU8j/12UIRhzSaUdQ+rQU5kGeFxm+hb1oh6pWWmv3uvmReDl0UnvtapVaIzo1jZbf/pD6ElLqSX+rUmOQNpJFa/r+sa4e/pBlAABoAAAAA3CUgShLdGIxsY7AUABPRrgCABdDuQ5GC7DqPQCgbbJUAoRSUj+NIEig0YfyWUho1VBBBA//uQZB4ABZx5zfMakeAAAAmwAAAAF5F3P0w9GtAAACfAAAAAwLhMDmAYWMgVEG1U0FIGCBgXBXAtfMH10000EEEEEECUBYln03TTTdNBDZopopYvrTTdNa325mImNg3TTPV9q3pmY0xoO6bv3r00y+IDGid/9aaaZTGMuj9mpu9Mpio1dXrr5HERTZSmqU36A3CumzN/9Robv/Xx4v9ijkSRSNLQhAWumap82WRSBUqXStV/YcS+XVLnSS+WLDroqArFkMEsAS+eWmrUzrO0oEmE40RlMZ5+ODIkAyKAGUwZ3mVKmcamcJnMW26MRPgUw6j+LkhyHGVGYjSUUKNpuJUQoOIAyDvEyG8S5yfK6dhZc0Tx1KI/gviKL6qvvFs1+bWtaz58uUNnryq6kt5RzOCkPWlVqVX2a/EEBUdU1KrXLf40GoiiFXK///qpoiDXrOgqDR38JB0bw7SoL+ZB9o1RCkQjQ2CBYZKd/+VJxZRRZlqSkKiws0WFxUyCwsKiMy7hUVFhIaCrNQsKkTIsLivwKKigsj8XYlwt/WKi2N4d//uQRCSAAjURNIHpMZBGYiaQPSYyAAABLAAAAAAAACWAAAAApUF/Mg+0aohSIRobBAsMlO//Kk4soosy1JSFRYWaLC4qZBYWFRGZdwqKiwkNBVmoWFSJkWFxX4FFRQWR+LsS4W/rFRb/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////VEFHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAU291bmRib3kuZGUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMjAwNGh0dHA6Ly93d3cuc291bmRib3kuZGUAAAAAAAAAACU=";
-
-
-    const AUDIO =
-      new Audio();
-
-    AUDIO.autoplay =
-      true;
-
-
-    const beep = () => {
-
-      AUDIO.src =
-        DATA_URL;
-    };
+    beep();
 
 
     /*
-     * iOS Safariでは、
-     * 最初にユーザー操作が必要になる。
+     * 選択中のMenu
      */
 
-    document
-      .querySelector(
-        '#sound'
-      )
-      .addEventListener(
-        'click',
-        () => {
-          beep();
-        }
-      );
+    const menu =
+      menuSelect.value;
 
 
     /*
-     * =========================================
-     * 初回 Menu取得
-     * =========================================
+     * Spreadsheetへ送信
      */
 
-    sendRequest(
-      'menus'
+    sendScan(
+      decodedText,
+      menu
+    );
+  };
+
+
+
+/*
+ * ==================================================
+ * QR Scanner
+ * ==================================================
+ *
+ * 元の方式と同じ
+ */
+
+const html5QrcodeScanner =
+  new Html5QrcodeScanner(
+
+    'reader',
+
+    {
+
+      fps:
+        10,
+
+      qrbox:
+        240
+    }
+  );
+
+
+html5QrcodeScanner
+  .render(
+    onScanSuccess
+  );
+
+
+
+/*
+ * ==================================================
+ * ビープ音
+ * ==================================================
+ *
+ * iPhone Safariでは
+ * 最初にユーザー操作が必要なので
+ * Sound ONボタンを残す。
+ */
+
+let AUDIO_CONTEXT =
+  null;
+
+
+function enableSound() {
+
+  if (
+    !AUDIO_CONTEXT
+  ) {
+
+    AUDIO_CONTEXT =
+      new (
+        window.AudioContext ||
+        window.webkitAudioContext
+      )();
+  }
+
+
+  if (
+    AUDIO_CONTEXT.state ===
+    'suspended'
+  ) {
+
+    AUDIO_CONTEXT
+      .resume();
+  }
+
+
+  beep();
+}
+
+
+
+function beep() {
+
+  if (
+    !AUDIO_CONTEXT
+  ) {
+
+    return;
+  }
+
+
+  const oscillator =
+    AUDIO_CONTEXT
+      .createOscillator();
+
+
+  const gain =
+    AUDIO_CONTEXT
+      .createGain();
+
+
+  oscillator
+    .connect(
+      gain
     );
 
-  </script>
+
+  gain
+    .connect(
+      AUDIO_CONTEXT.destination
+    );
+
+
+  oscillator.frequency.value =
+    1000;
+
+
+  gain.gain.value =
+    0.15;
+
+
+  oscillator.start();
+
+
+  oscillator.stop(
+    AUDIO_CONTEXT.currentTime +
+    0.08
+  );
+}
+
+
+
+document
+  .querySelector(
+    '#sound'
+  )
+  .addEventListener(
+    'click',
+    enableSound
+  );
+
+
+
+/*
+ * ==================================================
+ * 初期化
+ * ==================================================
+ */
+
+loadMenus();
+
+
+</script>
+
 
 </body>
+
 </html>
