@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <base target="_top">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  >
+
+  <title>出欠QR</title>
+</head>
+
+<body>
+
+  <!-- QRカメラ -->
+  <div id="reader" style="width:340px;"></div>
+
+  <!-- iOSで音を有効にする -->
+  <button id="sound">
+    Sound ON (iOS)
+  </button>
+
+  <!-- 読取・保存結果 -->
+  <div id="result"></div>
+
+  <!-- Menuシートから取得 -->
+  <select
+    id="menu"
+    onchange="CURRENT_TEXT = '';"
+  >
+    <option>メニュー読込中...</option>
+  </select>
+
+
+  <!-- QRライブラリ -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+
+  <script>
+
+    /*
+     * =========================================
+     * Apps Script WebアプリURL
+     * =========================================
+     *
+     * デプロイ後の /exec URL に変更する
+     *
+     * 例:
+     * https://script.google.com/macros/s/XXXXXXXX/exec
+     */
+
+    const API_URL =
+      'https://script.google.com/a/macros/hi-tech.ac.jp/s/AKfycbwmQruJPj3yznz3iNn93T9T7mRbp1zvvbHxPijljVt-c2DhrsQbMcm1aRFkgTox8ft-5A/exec';
+
+
+    /*
+     * =========================================
+     * 基本設定
+     * =========================================
+     */
+
+    let CURRENT_TEXT = '';
+
+    const PENDING = new Map();
+
+
+    /*
+     * PIN
+     *
+     * GitHub上には保存しない。
+     * Safariを閉じるまではsessionStorageに保持する。
+     */
+
+    let API_PIN =
+      sessionStorage.getItem('attendancePin') || '';
+
+    if (!API_PIN) {
+
+      API_PIN =
+        prompt('出欠管理PINを入力してください') || '';
+
+      if (API_PIN) {
+        sessionStorage.setItem(
+          'attendancePin',
+          API_PIN
+        );
+      }
+    }
+
+
+    /*
+     * =========================================
+     * 画面にメッセージを追加
+     * =========================================
+     */
+
+    const append = (text) => {
+
+      document
+        .querySelector('#result')
+        .innerHTML += `${text}<br>`;
+    };
+
+
+    /*
+     * =========================================
+     * Apps ScriptへPOST
+     * =========================================
+     *
+     * GitHub Pagesからgoogle.script.runは
+     * 使用できないため、hidden formを使う。
+     */
+
+    function sendRequest(
+      action,
+      data = {}
+    ) {
+
+      const requestId =
+        Date.now() +
+        '_' +
+        Math.random()
+          .toString(36)
+          .slice(2);
+
+
+      /*
+       * 返信を受けるための
+       * 非表示iframe
+       */
+
+      const iframe =
+        document.createElement('iframe');
+
+      iframe.name =
+        'post_' + requestId;
+
+      iframe.style.display =
+        'none';
+
+      document.body
+        .appendChild(iframe);
+
+
+      /*
+       * POSTフォーム
+       */
+
+      const form =
+        document.createElement('form');
+
+      form.method =
+        'POST';
+
+      form.action =
+        API_URL;
+
+      form.target =
+        iframe.name;
+
+      form.style.display =
+        'none';
+
+
+      const values = {
+
+        action: action,
+
+        pin: API_PIN,
+
+        requestId: requestId,
+
+        ...data
+      };
+
+
+      Object
+        .entries(values)
+        .forEach(
+          ([key, value]) => {
+
+            const input =
+              document.createElement('input');
+
+            input.type =
+              'hidden';
+
+            input.name =
+              key;
+
+            input.value =
+              value;
+
+            form.appendChild(
+              input
+            );
+          }
+        );
+
+
+      document.body
+        .appendChild(form);
+
+
+      /*
+       * 応答待ちとして記録
+       */
+
+      PENDING.set(
+        requestId,
+        {
+          iframe: iframe,
+          form: form,
+          action: action,
+          text: data.text || ''
+        }
+      );
+
+
+      /*
+       * Apps Scriptへ送信
+       */
+
+      form.submit();
+
+
+      /*
+       * 15秒でタイムアウト
+       */
+
+      setTimeout(
+        () => {
+
+          if (
+            PENDING.has(
+              requestId
+            )
+          ) {
+
+            const pending =
+              PENDING.get(
+                requestId
+              );
+
+            append(
+              '通信タイムアウト'
+            );
+
+            pending.form.remove();
+            pending.iframe.remove();
+
+            PENDING.delete(
+              requestId
+            );
+
+            /*
+             * 再読取可能にする
+             */
+
+            if (
+              pending.action ===
+              'scan'
+            ) {
+              CURRENT_TEXT = '';
+            }
+          }
+
+        },
+        15000
+      );
+    }
+
+
+    /*
+     * =========================================
+     * Apps Scriptからの応答
+     * =========================================
+     */
+
+    window.addEventListener(
+      'message',
+      function(event) {
+
+        const data =
+          event.data;
+
+
+        /*
+         * 出欠QR APIからの
+         * メッセージだけ処理
+         */
+
+        if (
+          !data ||
+          data.source !==
+            'attendance-qr' ||
+          !data.requestId
+        ) {
+          return;
+        }
+
+
+        const pending =
+          PENDING.get(
+            data.requestId
+          );
+
+
+        if (!pending) {
+          return;
+        }
+
+
+        /*
+         * 使用済みフォーム等を削除
+         */
+
+        pending.form.remove();
+        pending.iframe.remove();
+
+        PENDING.delete(
+          data.requestId
+        );
+
+
+        /*
+         * エラー
+         */
+
+        if (!data.ok) {
+
+          append(
+            'エラー: ' +
+            data.error
+          );
+
+
+          /*
+           * QRの場合は
+           * もう一度読めるようにする
+           */
+
+          if (
+            pending.action ===
+            'scan'
+          ) {
+            CURRENT_TEXT = '';
+          }
+
+
+          /*
+           * PINが違う場合
+           */
+
+          if (
+            data.error ===
+            'PINが違います'
+          ) {
+
+            sessionStorage
+              .removeItem(
+                'attendancePin'
+              );
+
+            alert(
+              'PINが違います。\nページを再読み込みしてください。'
+            );
+          }
+
+          return;
+        }
+
+
+        /*
+         * -------------------------
+         * Menu取得成功
+         * -------------------------
+         */
+
+        if (
+          data.action ===
+          'menus'
+        ) {
+
+          const select =
+            document
+              .querySelector(
+                '#menu'
+              );
+
+          select.innerHTML =
+            '';
+
+
+          data.menus
+            .forEach(
+              menu => {
+
+                const option =
+                  document
+                    .createElement(
+                      'option'
+                    );
+
+                option.textContent =
+                  menu;
+
+                option.value =
+                  menu;
+
+                select.appendChild(
+                  option
+                );
+              }
+            );
+
+
+          append(
+            'メニューを読み込みました'
+          );
+
+          return;
+        }
+
+
+        /*
+         * -------------------------
+         * QR保存成功
+         * -------------------------
+         */
+
+        if (
+          data.action ===
+          'scan'
+        ) {
+
+          append(
+            `保存完了: ${pending.text}`
+          );
+        }
+      }
+    );
+
+
+    /*
+     * =========================================
+     * QR読取成功時
+     * =========================================
+     */
+
+    const onScanSuccess =
+      (
+        decodedText,
+        decodedResult
+      ) => {
+
+        console.log(
+          'onScanSuccess',
+          decodedText,
+          CURRENT_TEXT
+        );
+
+
+        /*
+         * 同じQRの連続読取を防止
+         */
+
+        if (
+          CURRENT_TEXT !==
+          decodedText
+        ) {
+
+          CURRENT_TEXT =
+            decodedText;
+
+
+          /*
+           * 元コードと同様、
+           * 読み取った値を表示
+           */
+
+          append(
+            decodedText
+          );
+
+
+          /*
+           * 音
+           */
+
+          beep();
+
+
+          /*
+           * 選択中のMenu
+           */
+
+          const menu =
+            document
+              .querySelector(
+                '#menu'
+              )
+              .value;
+
+
+          /*
+           * Apps Scriptへ送信
+           */
+
+          sendRequest(
+            'scan',
+            {
+              text:
+                decodedText,
+
+              menu:
+                menu
+            }
+          );
+        }
+      };
+
+
+    /*
+     * =========================================
+     * QRスキャナー
+     * =========================================
+     *
+     * 元コードとほぼ同じ。
+     */
+
+    const html5QrcodeScanner =
+      new Html5QrcodeScanner(
+        'reader',
+        {
+          fps: 10,
+          qrbox: 240
+        }
+      );
+
+    html5QrcodeScanner.render(
+      onScanSuccess
+    );
+
+
+    /*
+     * =========================================
+     * ビープ音
+     * =========================================
+     *
+     * 元コードをそのまま利用。
+     */
+
+    const DATA_URL =
+      "data:audio/wav;base64,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qJrx4KOQjahZxWbcZgztj2c49nKmkId44S71j0c8eV9yDK6uPRzx5X18eDvjvQ6yKo9ZSS6l//8elePK/Lf//IInrOF/FvDoADYAGBMGb7FtErm5MXMlmPAJQVgWta7Zx2go+8xJ0UiCb8LHHdftWyLJE0QIAIsI+UbXu67dZMjmgDGCGl1H+vpF4NSDckSIkk7Vd+sxEhBQMRU8j/12UIRhzSaUdQ+rQU5kGeFxm+hb1oh6pWWmv3uvmReDl0UnvtapVaIzo1jZbf/pD6ElLqSX+rUmOQNpJFa/r+sa4e/pBlAABoAAAAA3CUgShLdGIxsY7AUABPRrgCABdDuQ5GC7DqPQCgbbJUAoRSUj+NIEig0YfyWUho1VBBBA//uQZB4ABZx5zfMakeAAAAmwAAAAF5F3P0w9GtAAACfAAAAAwLhMDmAYWMgVEG1U0FIGCBgXBXAtfMH10000EEEEEECUBYln03TTTdNBDZopopYvrTTdNa325mImNg3TTPV9q3pmY0xoO6bv3r00y+IDGid/9aaaZTGMuj9mpu9Mpio1dXrr5HERTZSmqU36A3CumzN/9Robv/Xx4v9ijkSRSNLQhAWumap82WRSBUqXStV/YcS+XVLnSS+WLDroqArFkMEsAS+eWmrUzrO0oEmE40RlMZ5+ODIkAyKAGUwZ3mVKmcamcJnMW26MRPgUw6j+LkhyHGVGYjSUUKNpuJUQoOIAyDvEyG8S5yfK6dhZc0Tx1KI/gviKL6qvvFs1+bWtaz58uUNnryq6kt5RzOCkPWlVqVX2a/EEBUdU1KrXLf40GoiiFXK///qpoiDXrOgqDR38JB0bw7SoL+ZB9o1RCkQjQ2CBYZKd/+VJxZRRZlqSkKiws0WFxUyCwsKiMy7hUVFhIaCrNQsKkTIsLivwKKigsj8XYlwt/WKi2N4d//uQRCSAAjURNIHpMZBGYiaQPSYyAAABLAAAAAAAACWAAAAApUF/Mg+0aohSIRobBAsMlO//Kk4soosy1JSFRYWaLC4qZBYWFRGZdwqKiwkNBVmoWFSJkWFxX4FFRQWR+LsS4W/rFRb/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////VEFHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAU291bmRib3kuZGUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMjAwNGh0dHA6Ly93d3cuc291bmRib3kuZGUAAAAAAAAAACU=";
+
+
+    const AUDIO =
+      new Audio();
+
+    AUDIO.autoplay =
+      true;
+
+
+    const beep = () => {
+
+      AUDIO.src =
+        DATA_URL;
+    };
+
+
+    /*
+     * iOS Safariでは、
+     * 最初にユーザー操作が必要になる。
+     */
+
+    document
+      .querySelector(
+        '#sound'
+      )
+      .addEventListener(
+        'click',
+        () => {
+          beep();
+        }
+      );
+
+
+    /*
+     * =========================================
+     * 初回 Menu取得
+     * =========================================
+     */
+
+    sendRequest(
+      'menus'
+    );
+
+  </script>
+
+</body>
+</html>
